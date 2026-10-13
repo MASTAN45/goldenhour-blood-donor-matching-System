@@ -72,6 +72,9 @@ public class BloodRequest {
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "last_wave_at")
+    private LocalDateTime lastWaveAt;
+
     @Version
     private Long version;
 }
