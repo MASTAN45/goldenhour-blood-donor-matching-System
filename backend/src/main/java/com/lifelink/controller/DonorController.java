@@ -1,5 +1,6 @@
 package com.lifelink.controller;
 
+import com.lifelink.dto.RequestDtos;
 import com.lifelink.entity.BloodGroup;
 import com.lifelink.entity.DonorProfile;
 import com.lifelink.entity.Gender;
@@ -7,6 +8,8 @@ import com.lifelink.repository.DonorProfileRepository;
 import com.lifelink.security.AuthUser;
 import com.lifelink.service.CompatibilityService;
 import com.lifelink.service.GeoService;
+import com.lifelink.service.MatchingService;
+import com.lifelink.service.RequestService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
@@ -28,6 +31,8 @@ public class DonorController {
     private final DonorProfileRepository donors;
     private final GeoService geo;
     private final CompatibilityService compatibility;
+    private final MatchingService matching;
+    private final RequestService requestService;
 
     /** eligibilityIssues explains exactly why the donor would not receive alerts (empty = eligible). */
     public record DonorView(String fullName, BloodGroup bloodGroup, boolean available, boolean healthDeclarationOk,
@@ -64,28 +69,41 @@ public class DonorController {
         p.setLongitude(body.longitude());
         p.setLocationConsent(true);
         p.setLocationUpdatedAt(LocalDateTime.now());
-        return view(donors.save(p));
+        DonorProfile saved = donors.save(p);
+        matching.catchUpForDonor(user.id());
+        return view(saved);
     }
 
     @PutMapping("/me/availability")
     public DonorView availability(@AuthenticationPrincipal AuthUser user, @RequestBody AvailabilityRequest body) {
         DonorProfile p = profile(user.id());
         p.setAvailable(body.available());
-        return view(donors.save(p));
+        DonorProfile saved = donors.save(p);
+        matching.catchUpForDonor(user.id());
+        return view(saved);
     }
 
     @PutMapping("/me/last-donation")
     public DonorView lastDonation(@AuthenticationPrincipal AuthUser user, @Valid @RequestBody LastDonationRequest body) {
         DonorProfile p = profile(user.id());
         p.setLastDonationDate(body.lastDonationDate());
-        return view(donors.save(p));
+        DonorProfile saved = donors.save(p);
+        matching.catchUpForDonor(user.id());
+        return view(saved);
     }
 
     @PutMapping("/me/health-declaration")
     public DonorView health(@AuthenticationPrincipal AuthUser user, @RequestBody HealthRequest body) {
         DonorProfile p = profile(user.id());
         p.setHealthDeclarationOk(body.accepted());
-        return view(donors.save(p));
+        DonorProfile saved = donors.save(p);
+        matching.catchUpForDonor(user.id());
+        return view(saved);
+    }
+
+    @GetMapping("/me/responses")
+    public List<RequestDtos.DonorResponseView> myResponses(@AuthenticationPrincipal AuthUser user) {
+        return requestService.donorResponses(user.id());
     }
 
     private DonorProfile profile(Long userId) {

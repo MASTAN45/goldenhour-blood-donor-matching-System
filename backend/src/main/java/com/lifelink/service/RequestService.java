@@ -1,10 +1,13 @@
 package com.lifelink.service;
 
+import com.lifelink.dto.RequestDtos;
 import com.lifelink.dto.RequestDtos.*;
 import com.lifelink.entity.*;
 import com.lifelink.repository.*;
+import com.lifelink.realtime.RequestClosedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +25,7 @@ public class RequestService {
     private final DonorProfileRepository donorProfiles;
     private final MatchingService matching;
     private final GeoService geo;
+    private final ApplicationEventPublisher events;
 
     @Value("${lifelink.expiry.critical-hours:6}")
     private int criticalHours;
@@ -80,10 +84,29 @@ public class RequestService {
                 .map(dr -> {
                     BloodRequest r = dr.getRequest();
                     Hospital h = r.getHospital();
-                    return new NearbyView(r.getId(), h.getName(), h.getCity(), r.getBloodGroupNeeded(),
-                            r.getUnitsNeeded(), r.getUnitsAccepted(), r.getUrgency(), r.getStatus(),
-                            r.getExpiresAt(), dr.getDistanceKm(), dr.getStatus());
+                    return new NearbyView(r.getId(), h.getName(), h.getCity(), h.getLatitude(), h.getLongitude(),
+                            r.getBloodGroupNeeded(), r.getUnitsNeeded(), r.getUnitsAccepted(), r.getUrgency(),
+                            r.getStatus(), r.getExpiresAt(), dr.getDistanceKm(), dr.getStatus());
                 }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<RequestDtos.DonorResponseView> donorResponses(Long donorId) {
+        return responses.findByDonor_IdOrderByIdDesc(donorId)
+                .stream()
+                .map(dr -> new RequestDtos.DonorResponseView(
+                        dr.getId(),
+                        dr.getRequest().getId(),
+                        dr.getRequest().getHospital().getName(),
+                        dr.getRequest().getBloodGroupNeeded(),
+                        dr.getRequest().getUrgency(),
+                        dr.getStatus(),
+                        dr.getDistanceKm(),
+                        dr.getRespondedAt(),
+                        dr.getRequest().getStatus(),
+                        dr.getRequest().getExpiresAt()
+                ))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -118,7 +141,9 @@ public class RequestService {
         }
         r.setStatus(RequestStatus.CANCELLED);
         requests.saveAndFlush(r);
+        List<Long> toNotify = responses.findDonorIdsByStatus(requestId, DonorResponseStatus.NOTIFIED);
         responses.closeOthers(requestId, LocalDateTime.now());
+        events.publishEvent(new RequestClosedEvent(requestId, "REQUEST_CANCELLED", toNotify));
         return toMine(r, responses.findByRequest_IdOrderByIdAsc(requestId));
     }
 

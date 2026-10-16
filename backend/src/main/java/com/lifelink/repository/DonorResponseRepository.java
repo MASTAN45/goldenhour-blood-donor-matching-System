@@ -23,6 +23,8 @@ public interface DonorResponseRepository extends JpaRepository<DonorResponse, Lo
 
     List<DonorResponse> findByDonor_IdAndStatusInOrderByIdDesc(Long donorId, Collection<DonorResponseStatus> statuses);
 
+    List<DonorResponse> findByDonor_IdOrderByIdDesc(Long donorId);
+
     @Query("select dr.donor.id from DonorResponse dr where dr.request.id = :rid and dr.status = :status")
     List<Long> findDonorIdsByStatus(@Param("rid") Long requestId, @Param("status") DonorResponseStatus status);
 

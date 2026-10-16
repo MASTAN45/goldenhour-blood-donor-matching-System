@@ -2,10 +2,12 @@ package com.lifelink.service;
 
 import com.lifelink.entity.BloodRequest;
 import com.lifelink.entity.RequestStatus;
+import com.lifelink.realtime.RequestProgressEvent;
 import com.lifelink.repository.BloodRequestRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
@@ -19,6 +21,7 @@ import java.util.List;
 public class WaveService {
     private final BloodRequestRepository requests;
     private final MatchingService matching;
+    private final ApplicationEventPublisher events;
 
     @Value("${lifelink.matching.waves:5,10,25}")
     private String wavesCsv;
@@ -54,6 +57,8 @@ public class WaveService {
         r.setLastWaveAt(now);
         requests.save(r);
         log.info("Request {} widened to {} km, {} new donor(s) alerted", requestId, next, notified);
+        events.publishEvent(new RequestProgressEvent(requestId, r.getRequester().getId(), "WAVE_EXPANDED",
+                r.getUnitsAccepted(), r.getUnitsNeeded(), r.getStatus().name(), next, notified));
     }
 
     @Transactional

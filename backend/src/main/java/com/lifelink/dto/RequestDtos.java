@@ -21,9 +21,33 @@ public final class RequestDtos {
     }
 
     /** What a donor sees: a request they were alerted about, with their own distance. */
-    public record NearbyView(Long requestId, String hospitalName, String hospitalCity, BloodGroup bloodGroup,
-                             int unitsNeeded, int unitsAccepted, Urgency urgency, RequestStatus status,
-                             LocalDateTime expiresAt, Double distanceKm, DonorResponseStatus myStatus) {
+    public record NearbyView(
+            Long requestId,
+            String hospitalName,
+            String hospitalCity,
+            Double hospitalLatitude,
+            Double hospitalLongitude,
+            BloodGroup bloodGroup,
+            int unitsNeeded,
+            int unitsAccepted,
+            Urgency urgency,
+            RequestStatus status,
+            LocalDateTime expiresAt,
+            Double distanceKm,
+            DonorResponseStatus myStatus) {
+    }
+
+    public record DonorResponseView(
+            Long responseId,
+            Long requestId,
+            String hospitalName,
+            BloodGroup bloodGroup,
+            Urgency urgency,
+            DonorResponseStatus status,
+            Double distanceKm,
+            LocalDateTime respondedAt,
+            RequestStatus requestStatus,
+            LocalDateTime expiresAt) {
     }
 
     /** What a hospital sees as a summary of its own request. */

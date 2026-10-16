@@ -5,6 +5,7 @@ import com.lifelink.entity.DonorResponse;
 import com.lifelink.entity.DonorResponseStatus;
 import com.lifelink.entity.RequestStatus;
 import com.lifelink.exception.RequestAlreadyFilledException;
+import com.lifelink.realtime.RequestProgressEvent;
 import com.lifelink.repository.BloodRequestRepository;
 import com.lifelink.repository.DonorResponseRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,9 +20,9 @@ import java.util.List;
 /**
  * Race-condition-safe accept flow.
  * 1) claimSlot: atomic conditional UPDATE on the request row (the database is the final arbiter).
- * 2) markAccepted: moves this donor's response NOTIFIED -> ACCEPTED (UNIQUE(request_id, donor_id) keeps it idempotent).
- * 3) If either step fails, the exception rolls back the whole transaction, so no slot is ever leaked.
- * Order matters: the request row is locked first by everyone, which avoids deadlocks with the auto-close step.
+ * 2) markAccepted: moves this donor NOTIFIED -> ACCEPTED (UNIQUE(request_id, donor_id) keeps it idempotent).
+ * 3) Any failure rolls the whole transaction back, so a slot is never leaked.
+ * Realtime events are published here and delivered only after the commit.
  */
 @Service
 @RequiredArgsConstructor
@@ -47,7 +48,6 @@ public class AcceptService {
         if (existing.getStatus() != DonorResponseStatus.NOTIFIED) {
             throw new RequestAlreadyFilledException();
         }
-
         if (requests.claimSlot(requestId, now) == 0) {
             throw new RequestAlreadyFilledException();
         }
@@ -56,6 +56,8 @@ public class AcceptService {
         }
 
         BloodRequest r = requests.findById(requestId).orElseThrow();
+        events.publishEvent(new RequestProgressEvent(requestId, r.getRequester().getId(), "DONOR_ACCEPTED",
+                r.getUnitsAccepted(), r.getUnitsNeeded(), r.getStatus().name(), null, null));
         if (r.getStatus() == RequestStatus.FILLED) {
             List<Long> closed = responses.findDonorIdsByStatus(requestId, DonorResponseStatus.NOTIFIED);
             responses.closeOthers(requestId, now);
@@ -66,6 +68,11 @@ public class AcceptService {
 
     @Transactional
     public void decline(Long requestId, Long donorUserId) {
-        responses.markDeclined(requestId, donorUserId, LocalDateTime.now());
+        int changed = responses.markDeclined(requestId, donorUserId, LocalDateTime.now());
+        if (changed > 0) {
+            requests.findById(requestId).ifPresent(r -> events.publishEvent(new RequestProgressEvent(
+                    requestId, r.getRequester().getId(), "DONOR_DECLINED",
+                    r.getUnitsAccepted(), r.getUnitsNeeded(), r.getStatus().name(), null, null)));
+        }
     }
 }
